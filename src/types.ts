@@ -21,14 +21,14 @@ export interface Article {
     userPainPoints: string[];
   };
   coreProposition: string;
-  outline: { title: string; sections: string[]; lsi: string[]; anchorLinks: { keyword: string; url: string }[] };
+  outline: { title: string; coreProposition: string; sections: string[]; lsi: string[]; anchorLinks: { keyword: string; url: string }[] };
   sections: ArticleSection[];
   finalContent: string;
   metaTitle: string;
   metaDescription: string;
   tldr: string;
-  internalLinks: string[]; 
-  status: 'pending' | 'processing' | 'polishing' | 'qa' | 'completed';
+  internalLinks: string[];
+  status: 'pending' | 'processing' | 'paused' | 'failed' | 'completed';
   qaPass: boolean;
 }
 
@@ -41,4 +41,5 @@ export interface GenerationState {
   coreValues: string;
   articles: Article[];
   error: string | null;
+  selectedModel: string;
 }

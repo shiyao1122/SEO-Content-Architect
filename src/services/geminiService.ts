@@ -1,9 +1,6 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 
-const getAiClient = (apiKey?: string) => new GoogleGenAI({ apiKey: apiKey || process.env.GEMINI_API_KEY || "" });
-
-const PRO_MODEL = "gemini-3.1-pro-preview";
-const FLASH_MODEL = "gemini-3-flash-preview";
+const getAiClient = (apiKey?: string) => new GoogleGenerativeAI(apiKey || process.env.GEMINI_API_KEY || "");
 
 /**
  * Utility to parse JSON from AI response, handling markdown blocks if present.
@@ -20,9 +17,8 @@ function parseJsonResponse(text: string) {
 
 /**
  * Node 0: Market Context Researcher
- * Automatically generates Audience, Persona, and Selling Points based on Product + Keywords.
  */
-export async function researchMarketContext(seedKeyword: string, product: string, apiKey?: string) {
+export async function researchMarketContext(seedKeyword: string, product: string, apiKey?: string, model: string = "gemini-3.1-pro-preview") {
   const ai = getAiClient(apiKey);
   const prompt = `
     You are a Strategic Market Analyst. 
@@ -42,26 +38,26 @@ export async function researchMarketContext(seedKeyword: string, product: string
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: FLASH_MODEL,
-    contents: prompt,
-    config: {
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
-          audience: { type: Type.STRING },
-          persona: { type: Type.STRING },
-          coreValues: { type: Type.STRING }
+          audience: { type: SchemaType.STRING },
+          persona: { type: SchemaType.STRING },
+          coreValues: { type: SchemaType.STRING }
         },
         required: ["audience", "persona", "coreValues"]
       }
     }
   });
 
-  return parseJsonResponse(response.text);
+  return parseJsonResponse(response.response.text());
 }
-export async function expandKeywords(seedKeyword: string, product: string, apiKey?: string) {
+
+export async function expandKeywords(seedKeyword: string, product: string, apiKey?: string, model: string = "gemini-3.1-pro-preview") {
   const ai = getAiClient(apiKey);
   const prompt = `
     You are an SEO Strategist. 
@@ -88,26 +84,25 @@ export async function expandKeywords(seedKeyword: string, product: string, apiKe
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: FLASH_MODEL,
-    contents: prompt,
-    config: {
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
           clusters: {
-            type: Type.ARRAY,
+            type: SchemaType.ARRAY,
             items: {
-              type: Type.OBJECT,
+              type: SchemaType.OBJECT,
               properties: {
-                id: { type: Type.STRING },
-                mainTitle: { type: Type.STRING },
-                intent: { type: Type.STRING },
-                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-                whyDistinct: { type: Type.STRING }
+                id: { type: SchemaType.STRING },
+                mainTitle: { type: SchemaType.STRING },
+                intent: { type: SchemaType.STRING },
+                keywords: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+                whyDistinct: { type: SchemaType.STRING }
               },
-              required: ["id", "mainTitle", "intent", "keywords"]
+              required: ["id", "mainTitle", "intent", "keywords", "whyDistinct"]
             }
           }
         },
@@ -116,14 +111,11 @@ export async function expandKeywords(seedKeyword: string, product: string, apiKe
     }
   });
 
-  const data = parseJsonResponse(response.text);
+  const data = parseJsonResponse(response.response.text());
   return data.clusters;
 }
 
-/**
- * Node 2: Market & Competitor Research (Dissector)
- */
-export async function researchCompetitors(topic: string, product: string, apiKey?: string) {
+export async function researchCompetitors(topic: string, product: string, apiKey?: string, model: string = "gemini-3-flash-preview") {
   const ai = getAiClient(apiKey);
   const prompt = `
     You are a Market Researcher & Competitive Dissector.
@@ -146,33 +138,28 @@ export async function researchCompetitors(topic: string, product: string, apiKey
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: PRO_MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools: [{ googleSearch: {} }] as any,
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
-          topInsights: { type: Type.STRING },
-          competitorWeaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
-          keyFacts: { type: Type.ARRAY, items: { type: Type.STRING } },
-          userPainPoints: { type: Type.ARRAY, items: { type: Type.STRING } }
+          topInsights: { type: SchemaType.STRING },
+          competitorWeaknesses: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+          keyFacts: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+          userPainPoints: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
         },
         required: ["topInsights", "competitorWeaknesses", "keyFacts", "userPainPoints"]
       }
-    } as any
+    }
   });
 
-  const data = parseJsonResponse(response.text);
-  return data;
+  return parseJsonResponse(response.response.text());
 }
 
-/**
- * Node 3: Core Proposition + Node 4: GEO-Optimized Deep Outline
- */
-export async function architectOutline(topic: string, research: any, product: string, apiKey?: string) {
+export async function architectOutline(topic: string, research: any, product: string, apiKey?: string, model: string = "gemini-3.1-pro-preview") {
   const ai = getAiClient(apiKey);
   const prompt = `
     Generate a deep SEO/GEO outline for: "${topic}"
@@ -182,40 +169,40 @@ export async function architectOutline(topic: string, research: any, product: st
     Requirements:
     1. Start with [GEO Summary]: A highly synthesized, bolded summary of the core answer to the user's intent.
     2. Define "Core Proposition": A unique angle that offers "Information Gain".
-    3. Identify LSI keywords and anchor link mappings (suggest 3 keywords to target for external link anchor text).
-    4. Ensure logical flow for information gain.
+    3. Include EXACTLY 5-10 detailed sections in the "sections" array. Each section title must be descriptive.
+    4. Include 20+ Semantic Keywords (LSI) in the "lsi" array.
+    5. Define 3 anchor links to related articles (keywords provided above).
     
     Return JSON:
     {
       "title": "SEO Optimized Title",
       "coreProposition": "...",
-      "sections": ["Section 1 Title", "Section 2 Title"],
-      "lsi": ["Keyword 1", "Keyword 2"],
+      "sections": ["Section 1 Title", "Section 2 Title", ...],
+      "lsi": ["Keyword 1", "Keyword 2", ...],
       "anchorLinks": [
         { "keyword": "Target Keyword", "url": "Placeholder URL" }
       ]
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: PRO_MODEL,
-    contents: prompt,
-    config: {
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
-          title: { type: Type.STRING },
-          coreProposition: { type: Type.STRING },
-          sections: { type: Type.ARRAY, items: { type: Type.STRING } },
-          lsi: { type: Type.ARRAY, items: { type: Type.STRING } },
+          title: { type: SchemaType.STRING },
+          coreProposition: { type: SchemaType.STRING },
+          sections: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+          lsi: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
           anchorLinks: {
-            type: Type.ARRAY,
+            type: SchemaType.ARRAY,
             items: {
-              type: Type.OBJECT,
+              type: SchemaType.OBJECT,
               properties: {
-                keyword: { type: Type.STRING },
-                url: { type: Type.STRING }
+                keyword: { type: SchemaType.STRING },
+                url: { type: SchemaType.STRING }
               }
             }
           }
@@ -225,12 +212,9 @@ export async function architectOutline(topic: string, research: any, product: st
     }
   });
 
-  return parseJsonResponse(response.text);
+  return parseJsonResponse(response.response.text());
 }
 
-/**
- * Node 5: Data-Rich Segmented Writer
- */
 export async function writeSegment(
   sectionTitle: string,
   articleTitle: string,
@@ -238,7 +222,8 @@ export async function writeSegment(
   proposition: string,
   previousContent: string,
   persona: string,
-  apiKey?: string
+  apiKey?: string,
+  model: string = "gemini-3-flash-preview"
 ) {
   const ai = getAiClient(apiKey);
   const prompt = `
@@ -266,20 +251,19 @@ export async function writeSegment(
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: PRO_MODEL,
-    contents: prompt,
-    config: {
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
-          content: { type: Type.STRING },
+          content: { type: SchemaType.STRING },
           imageSuggestion: {
-            type: Type.OBJECT,
+            type: SchemaType.OBJECT,
             properties: {
-              suggestion: { type: Type.STRING },
-              altText: { type: Type.STRING }
+              suggestion: { type: SchemaType.STRING },
+              altText: { type: SchemaType.STRING }
             }
           }
         },
@@ -288,16 +272,16 @@ export async function writeSegment(
     }
   });
 
-  return parseJsonResponse(response.text);
+  return parseJsonResponse(response.response.text());
 }
 
-/**
- * Node 6: Polish & AIO Connector
- */
-export async function polishAndAIO(content: string, anchorLinks: { keyword: string; url: string }[], apiKey?: string) {
+export async function polishAndAIO(content: string, anchorLinks: { keyword: string; url: string }[], apiKey?: string, model: string = "gemini-3.1-pro-preview") {
   const ai = getAiClient(apiKey);
   const prompt = `
     You are an Editor & AIO (AI Optimization) Specialist.
+    Original Content to Polish:
+    ${content}
+    
     Task:
     1. Polish the content to remove "AI-isms" (e.g., 'In conclusion', 'Moreover').
     2. Create a [TL;DR Summary]: Max 150 words, using defining, concise sentences for AIO scraping.
@@ -313,31 +297,27 @@ export async function polishAndAIO(content: string, anchorLinks: { keyword: stri
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: FLASH_MODEL,
-    contents: prompt,
-    config: {
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
-          polishedContent: { type: Type.STRING },
-          tldr: { type: Type.STRING },
-          metaTitle: { type: Type.STRING },
-          metaDescription: { type: Type.STRING }
+          polishedContent: { type: SchemaType.STRING },
+          tldr: { type: SchemaType.STRING },
+          metaTitle: { type: SchemaType.STRING },
+          metaDescription: { type: SchemaType.STRING }
         },
         required: ["polishedContent", "tldr", "metaTitle", "metaDescription"]
       }
     }
   });
 
-  return parseJsonResponse(response.text);
+  return parseJsonResponse(response.response.text());
 }
 
-/**
- * Node 7: QA Node (Micro-Surgery)
- */
-export async function qaReview(content: string, sectionTitle: string, apiKey?: string) {
+export async function qaReview(content: string, sectionTitle: string, apiKey?: string, model: string = "gemini-3-flash-preview") {
   const ai = getAiClient(apiKey);
   const prompt = `
     You are a Content Auditor. 
@@ -358,30 +338,26 @@ export async function qaReview(content: string, sectionTitle: string, apiKey?: s
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: FLASH_MODEL,
-    contents: prompt,
-    config: {
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
+        type: SchemaType.OBJECT,
         properties: {
-          pass: { type: Type.BOOLEAN },
-          score: { type: Type.NUMBER },
-          feedback: { type: Type.STRING }
+          pass: { type: SchemaType.BOOLEAN },
+          score: { type: SchemaType.NUMBER },
+          feedback: { type: SchemaType.STRING }
         },
         required: ["pass", "score", "feedback"]
       }
     }
   });
 
-  return parseJsonResponse(response.text);
+  return parseJsonResponse(response.response.text());
 }
 
-/**
- * Node 7b: Editor Micro-Surgery
- */
-export async function editorMicrosurgery(content: string, feedback: string, apiKey?: string) {
+export async function editorMicrosurgery(content: string, feedback: string, apiKey?: string, model: string = "gemini-3-flash-preview") {
   const ai = getAiClient(apiKey);
   const prompt = `
     You are an Editor performing "Micro-Surgery". 
@@ -393,10 +369,9 @@ export async function editorMicrosurgery(content: string, feedback: string, apiK
     Inject missing data points if requested.
   `;
 
-  const response = await ai.models.generateContent({
-    model: FLASH_MODEL,
-    contents: prompt
+  const response = await (ai as any).getGenerativeModel({ model }).generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
   });
 
-  return response.text;
+  return response.response.text();
 }
